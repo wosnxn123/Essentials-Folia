@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: Euphyllia Bierque <bierque.euphyllia@gmail.com>
+Date: Sat, 6 Jun 2026 09:24:38 +0200
+Subject: [PATCH] Fix eject entity
+
+
+diff --git a/Essentials/src/main/java/com/earth2me/essentials/AsyncTeleport.java b/Essentials/src/main/java/com/earth2me/essentials/AsyncTeleport.java
+index 218285c720b353b4013e4f4b48b7828b5c900cc5..a010b7dde3d0395e1ffadff6201f75a030b0f853 100644
+--- a/Essentials/src/main/java/com/earth2me/essentials/AsyncTeleport.java
++++ b/Essentials/src/main/java/com/earth2me/essentials/AsyncTeleport.java
+@@ -5,6 +5,7 @@ import com.earth2me.essentials.commands.WarpNotFoundException;
+ import com.earth2me.essentials.utils.DateUtil;
+ import com.earth2me.essentials.utils.LocationUtil;
+ //import io.papermc.lib.PaperLib;
++import com.earth2me.essentials.utils.VersionUtil;
+ import net.ess3.api.IEssentials;
+ import net.ess3.api.IUser;
+ import net.ess3.api.TranslatableException;
+@@ -140,6 +141,7 @@ public class AsyncTeleport implements IAsyncTeleport {
+     }
+ 
+     private void runOnMain(final Runnable runnable) throws ExecutionException, InterruptedException {
++        if (VersionUtil.isFoliaServer()) throw new UnsupportedOperationException("Not supported on Folia");
+         if (Bukkit.isPrimaryThread()) {
+             runnable.run();
+             return;
+@@ -169,8 +171,8 @@ public class AsyncTeleport implements IAsyncTeleport {
+             }
+ 
+             try {
+-                runOnMain(() -> teleportee.getBase().eject()); //EntityDismountEvent requires a sync context.
+-            } catch (final ExecutionException | InterruptedException e) {
++                teleportee.getBase().getScheduler().run(ess, (scheduledTask) -> teleportee.getBase().eject(), null); //EntityDismountEvent requires a sync context.
++            } catch (final Exception e) {
+                 future.completeExceptionally(e);
+                 return;
+             }

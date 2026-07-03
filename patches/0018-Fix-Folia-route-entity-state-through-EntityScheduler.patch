@@ -1,0 +1,155 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wosnxn123 <wosnxn123@users.noreply.github.com>
+Date: Fri, 3 Jul 2026 12:12:53 +0800
+Subject: [PATCH] Fix Folia: route entity state through EntityScheduler with
+ isOwnedByCurrentRegion
+
+
+diff --git a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandext.java b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandext.java
+index 0b9601f94b39a20fd41223b1164960ec66c32d31..93a98b98434fe8b663ab74bd52e829bf6d50b2d1 100644
+--- a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandext.java
++++ b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandext.java
+@@ -1,4 +1,5 @@
+ package com.earth2me.essentials.commands;
++import org.bukkit.Bukkit;
+ 
+ import com.earth2me.essentials.CommandSource;
+ import com.earth2me.essentials.User;
+@@ -35,8 +36,16 @@ public class Commandext extends EssentialsLoopCommand {
+ 
+     @Override
+     protected void updatePlayer(final Server server, final CommandSource sender, final User player, final String[] args) {
+-        extPlayer(player.getBase());
+-        sender.sendTl("extinguishOthers", player.getDisplayName());
++        final Player target = player.getBase();
++        final Runnable task = () -> {
++            extPlayer(target);
++            sender.sendTl("extinguishOthers", player.getDisplayName());
++        };
++        if (Bukkit.isOwnedByCurrentRegion(target)) {
++            task.run();
++        } else {
++            ess.getEntityScheduler(target).run(ess, scheduledTask -> task.run(), null);
++        }
+     }
+ 
+     private void extPlayer(final Player player) {
+diff --git a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandfeed.java b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandfeed.java
+index fcf97889cc97d29c53cec4a2e8e6cf3c119c91f4..31044a16d0adba4064465e063a7e82b3e5fba438 100644
+--- a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandfeed.java
++++ b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandfeed.java
+@@ -1,4 +1,5 @@
+ package com.earth2me.essentials.commands;
++import org.bukkit.Bukkit;
+ 
+ import com.earth2me.essentials.CommandSource;
+ import com.earth2me.essentials.User;
+@@ -40,12 +41,20 @@ public class Commandfeed extends EssentialsLoopCommand {
+ 
+     @Override
+     protected void updatePlayer(final Server server, final CommandSource sender, final User player, final String[] args) throws PlayerExemptException {
++        final Player target = player.getBase();
++        final Runnable task = () -> {
+         try {
+-            feedPlayer(player.getBase());
++            feedPlayer(target);
+             sender.sendTl("feedOther", player.getDisplayName());
+         } catch (final QuietAbortException e) {
+             //Handle Quietly
+         }
++        };
++        if (Bukkit.isOwnedByCurrentRegion(target)) {
++            task.run();
++        } else {
++            ess.getEntityScheduler(target).run(ess, scheduledTask -> task.run(), null);
++        }
+     }
+ 
+     private void feedPlayer(final Player player) throws QuietAbortException {
+diff --git a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandgamemode.java b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandgamemode.java
+index bb9860c80c59bf475720d4c9d2c6b94d1b3651aa..25764cdcf889ce5245c399b126aae67411e57a4a 100644
+--- a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandgamemode.java
++++ b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandgamemode.java
+@@ -1,4 +1,6 @@
+ package com.earth2me.essentials.commands;
++import org.bukkit.entity.Player;
++import org.bukkit.Bukkit;
+ 
+ import com.earth2me.essentials.CommandSource;
+ import com.earth2me.essentials.IUser;
+@@ -59,8 +61,17 @@ public class Commandgamemode extends EssentialsLoopCommand {
+             return;
+         }
+ 
+-        user.getBase().setGameMode(gameMode);
+-        user.sendTl("gameMode", user.playerTl(user.getBase().getGameMode().toString().toLowerCase(Locale.ENGLISH)), user.getDisplayName());
++        final Player player = user.getBase();
++        final GameMode finalGameMode = gameMode;
++        final Runnable task = () -> {
++            player.setGameMode(finalGameMode);
++            user.sendTl("gameMode", user.playerTl(player.getGameMode().toString().toLowerCase(Locale.ENGLISH)), user.getDisplayName());
++        };
++        if (Bukkit.isOwnedByCurrentRegion(player)) {
++            task.run();
++        } else {
++            ess.getEntityScheduler(player).run(ess, scheduledTask -> task.run(), null);
++        }
+     }
+ 
+     private void setUserGamemode(final CommandSource sender, final GameMode gameMode, final User user) throws NotEnoughArgumentsException {
+@@ -73,8 +84,16 @@ public class Commandgamemode extends EssentialsLoopCommand {
+             return;
+         }
+ 
+-        user.getBase().setGameMode(gameMode);
+-        sender.sendTl("gameMode", sender.tl(gameMode.toString().toLowerCase(Locale.ENGLISH)), user.getDisplayName());
++        final Player player = user.getBase();
++        final Runnable task = () -> {
++            player.setGameMode(gameMode);
++            sender.sendTl("gameMode", sender.tl(gameMode.toString().toLowerCase(Locale.ENGLISH)), user.getDisplayName());
++        };
++        if (Bukkit.isOwnedByCurrentRegion(player)) {
++            task.run();
++        } else {
++            ess.getEntityScheduler(player).run(ess, scheduledTask -> task.run(), null);
++        }
+     }
+ 
+     // essentials.gamemode will let them change to any but essentials.gamemode.survival would only let them change to survival.
+diff --git a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandheal.java b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandheal.java
+index 7f72526660ef2a931a3110a7e278861ec8de573f..7209d4c13644b279888682c4cf2405d429d42c13 100644
+--- a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandheal.java
++++ b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandheal.java
+@@ -1,4 +1,5 @@
+ package com.earth2me.essentials.commands;
++import org.bukkit.Bukkit;
+ 
+ import com.earth2me.essentials.CommandSource;
+ import com.earth2me.essentials.User;
+@@ -41,9 +42,9 @@ public class Commandheal extends EssentialsLoopCommand {
+ 
+     @Override
+     protected void updatePlayer(final Server server, final CommandSource sender, final User user, final String[] args) throws PlayerExemptException {
++        final Player player = user.getBase();
++        final Runnable task = () -> {
+         try {
+-            final Player player = user.getBase();
+-
+             if (player.getHealth() == 0) {
+                 throw new PlayerExemptException("healDead");
+             }
+@@ -75,6 +76,14 @@ public class Commandheal extends EssentialsLoopCommand {
+             }
+         } catch (final QuietAbortException e) {
+             //Handle Quietly
++        } catch (final PlayerExemptException e) {
++            //Handle Quietly on async thread
++        }
++        };
++        if (Bukkit.isOwnedByCurrentRegion(player)) {
++            task.run();
++        } else {
++            ess.getEntityScheduler(player).run(ess, scheduledTask -> task.run(), null);
+         }
+     }
+ 

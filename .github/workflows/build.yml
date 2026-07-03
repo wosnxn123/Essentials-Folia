@@ -5,6 +5,9 @@ on:
     branches: ["folia-patches"]
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: ubuntu-latest

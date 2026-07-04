@@ -123,3 +123,7 @@ For any questions or issues, feel free to open an [issue](https://github.com/Eup
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more information.
+
+---
+
+> 本 fork 定期同步上游 [Euphillya/Essentials-Folia](https://github.com/Euphillya/Essentials-Folia) 与 EssentialsX。最近同步：2026-07-04（含上游 0018-TickGuard + 本 fork 0019 EntityScheduler 路由）。

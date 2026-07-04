@@ -1,0 +1,45 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wosnxn123 <wosnxn123@users.noreply.github.com>
+Date: Fri, 4 Jul 2026 15:40:00 +0800
+Subject: [PATCH] Fix /tpr async chunk access on Folia/Canvas
+
+RandomTeleport.getCenter called World.getHighestBlockYAt synchronously,
+which throws "Cannot retrieve chunk asynchronously" on Folia/Canvas when
+the command runs on a different world's region thread (e.g. player in
+the nether running /tpr whose center is in the overworld). The center Y
+is only used in the attemptRandomLocation fallback (the common path
+already computes the final location Y async via getChunkAtAsync in
+calculateRandomLocation), so use a placeholder Y in getCenter and
+compute the real Y asynchronously in the fallback. Uses
+World.getChunkAtAsync (the Folia-safe pattern introduced by 0005),
+whose callback runs on the chunk's region thread where getHighestBlockYAt
+is safe.
+
+diff --git a/Essentials/src/main/java/com/earth2me/essentials/RandomTeleport.java b/Essentials/src/main/java/com/earth2me/essentials/RandomTeleport.java
+--- a/Essentials/src/main/java/com/earth2me/essentials/RandomTeleport.java
++++ b/Essentials/src/main/java/com/earth2me/essentials/RandomTeleport.java
+@@ -62,6 +62,8 @@
+
+         final Location worldCenter = ess.getServer().getWorlds().get(0).getWorldBorder().getCenter();
+-        worldCenter.setY(worldCenter.getWorld().getHighestBlockYAt(worldCenter) + HIGHEST_BLOCK_Y_OFFSET);
++        // Canvas/Folia: getHighestBlockYAt reads chunk synchronously and throws on cross-region access.
++        // Use a placeholder Y; the real Y is computed async in the attemptRandomLocation fallback.
++        worldCenter.setY(worldInfoProvider.getMaxHeight(worldCenter.getWorld()));
+         setCenter(name, worldCenter);
+         return worldCenter;
+     }
+@@ -184,3 +186,13 @@
+         } else {
+-            future.complete(center);
++            // Canvas/Folia: compute center Y async (chunk read must run on the chunk's region thread).
++            // Mirror calculateRandomLocation: nether uses getNetherYAt (getHighestBlockYAt returns
++            // the bedrock ceiling in the nether), other worlds use getHighestBlockYAt.
++            center.getWorld().getChunkAtAsync(center.getBlockX() >> 4, center.getBlockZ() >> 4).thenAccept(chunk -> {
++                if (World.Environment.NETHER.equals(center.getWorld().getEnvironment())) {
++                    center.setY(getNetherYAt(center));
++                } else {
++                    center.setY(center.getWorld().getHighestBlockYAt(center) + HIGHEST_BLOCK_Y_OFFSET);
++                }
++                future.complete(center);
++            });
+         }

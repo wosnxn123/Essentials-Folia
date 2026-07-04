@@ -1,0 +1,210 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: wosnxn123 <wosnxn123@users.noreply.github.com>
+Date: Fri, 4 Jul 2026 16:10:00 +0800
+Subject: [PATCH] Fix /tpr async chunk access on Folia/Canvas (original async pattern)
+
+RandomTeleport.getCenter called World.getHighestBlockYAt synchronously,
+throwing "Cannot retrieve chunk asynchronously" on Folia/Canvas when the
+command runs on a different world's region thread (e.g. player in nether,
+tpr center in overworld).
+
+Follow the original async pattern already used by calculateRandomLocation
+and getRandomLocation: make getCenter return CompletableFuture<Location>,
+computing the Y via World.getChunkAtAsync (callback runs on the chunk's
+region thread where getHighestBlockYAt/getNetherYAt are safe). Nether
+uses getNetherYAt (getHighestBlockYAt returns the bedrock ceiling in the
+nether), other worlds use getHighestBlockYAt -- mirroring calculateRandomLocation.
+
+Callers updated to the CompletableFuture pattern:
+- Commandtpr (both overloads): getCenter().thenAccept(center -> { event + teleport })
+- getRandomLocation(name): getCenter().thenCompose(center -> attemptRandomLocation(...))
+- cacheRandomLocations: getCenter().thenAccept(center -> getRegionScheduler().run(...))
+- getMaxRange: uses new sync getCenterWorld() (world only, no chunk read) for the
+  default max-range, avoiding an async cascade for a sync double return.
+
+diff --git a/Essentials/src/main/java/com/earth2me/essentials/RandomTeleport.java b/Essentials/src/main/java/com/earth2me/essentials/RandomTeleport.java
+index 489e989..6a1e12a 100644
+--- a/Essentials/src/main/java/com/earth2me/essentials/RandomTeleport.java
++++ b/Essentials/src/main/java/com/earth2me/essentials/RandomTeleport.java
+@@ -54,16 +54,35 @@ public class RandomTeleport implements IConf {
+         return config.hasProperty("locations." + name);
+     }
+ 
+-    public Location getCenter(final String name) {
++    public CompletableFuture<Location> getCenter(final String name) {
+         final LazyLocation center = config.getLocation(locationKey(name, "center"));
+         if (center != null && center.location() != null) {
+-            return center.location();
++            return CompletableFuture.completedFuture(center.location());
+         }
+ 
+         final Location worldCenter = ess.getServer().getWorlds().get(0).getWorldBorder().getCenter();
+-        worldCenter.setY(worldCenter.getWorld().getHighestBlockYAt(worldCenter) + HIGHEST_BLOCK_Y_OFFSET);
+-        setCenter(name, worldCenter);
+-        return worldCenter;
++        final CompletableFuture<Location> future = new CompletableFuture<>();
++        // Canvas/Folia: getHighestBlockYAt/getNetherYAt read chunk synchronously and must run on the chunk's region thread.
++        // Route through getChunkAtAsync (callback runs on the region thread), mirroring calculateRandomLocation.
++        worldCenter.getWorld().getChunkAtAsync(worldCenter.getBlockX() >> 4, worldCenter.getBlockZ() >> 4).thenAccept(chunk -> {
++            if (World.Environment.NETHER.equals(worldCenter.getWorld().getEnvironment())) {
++                worldCenter.setY(getNetherYAt(worldCenter));
++            } else {
++                worldCenter.setY(worldCenter.getWorld().getHighestBlockYAt(worldCenter) + HIGHEST_BLOCK_Y_OFFSET);
++            }
++            setCenter(name, worldCenter);
++            future.complete(worldCenter);
++        });
++        return future;
++    }
++
++    // Returns the world of a tpr center without reading chunk data (sync-safe); used by getMaxRange.
++    public World getCenterWorld(final String name) {
++        final LazyLocation center = config.getLocation(locationKey(name, "center"));
++        if (center != null && center.location() != null) {
++            return center.location().getWorld();
++        }
++        return ess.getServer().getWorlds().get(0);
+     }
+ 
+     public void setCenter(final String name, final Location center) {
+@@ -85,7 +104,7 @@ public class RandomTeleport implements IConf {
+     }
+ 
+     public double getMaxRange(final String name) {
+-        return config.getDouble(locationKey(name, "max-range"), getCenter(name).getWorld().getWorldBorder().getSize() / 2);
++        return config.getDouble(locationKey(name, "max-range"), getCenterWorld(name).getWorldBorder().getSize() / 2);
+     }
+ 
+     public void setMaxRange(final String name, final double maxRange) {
+@@ -139,10 +158,9 @@ public class RandomTeleport implements IConf {
+         // Return a random location immediately if one is available, otherwise try to find one now
+         if (cached.isEmpty()) {
+             final int findAttempts = this.getFindAttempts();
+-            final Location center = this.getCenter(name);
+             final double minRange = this.getMinRange(name);
+             final double maxRange = this.getMaxRange(name);
+-            attemptRandomLocation(findAttempts, center, minRange, maxRange).thenAccept(future::complete);
++            this.getCenter(name).thenCompose(center -> attemptRandomLocation(findAttempts, center, minRange, maxRange)).thenAccept(future::complete);
+         } else {
+             future.complete(cached.poll());
+         }
+@@ -156,10 +174,9 @@ public class RandomTeleport implements IConf {
+ 
+     // Prompts caching random valid locations, up to a maximum number of attempts.
+     public void cacheRandomLocations(final String name) {
+-        final Location center = getCenter(name);
+         final double minRange = getMinRange(name);
+         final double maxRange = getMaxRange(name);
+-        ess.getRegionScheduler().run(ess, center, scheduledTask -> {
++        getCenter(name).thenAccept(center -> ess.getRegionScheduler().run(ess, center, scheduledTask -> {
+             for (int i = 0; i < this.getFindAttempts(); ++i) {
+                 calculateRandomLocation(center, minRange, maxRange).thenAccept(location -> {
+                     if (isValidRandomLocation(location)) {
+@@ -167,7 +184,7 @@ public class RandomTeleport implements IConf {
+                     }
+                 });
+             }
+-        });
++        }));
+     }
+ 
+     // Recursively attempt to find a random location. After a maximum number of attempts, the center is returned.
+diff --git a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandtpr.java b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandtpr.java
+index e1aa96c..dd2f280 100644
+--- a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandtpr.java
++++ b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandtpr.java
+@@ -50,27 +50,31 @@ public class Commandtpr extends EssentialsCommand {
+             }
+         }
+ 
+-        final UserRandomTeleportEvent event = new UserRandomTeleportEvent(target, randomLocationName, randomTeleport.getCenter(randomLocationName), randomTeleport.getMinRange(randomLocationName), randomTeleport.getMaxRange(randomLocationName));
+-        server.getPluginManager().callEvent(event);
+-        if (event.isCancelled()) {
+-            return;
+-        }
++        final double minRange = randomTeleport.getMinRange(randomLocationName);
++        final double maxRange = randomTeleport.getMaxRange(randomLocationName);
++        randomTeleport.getCenter(randomLocationName).thenAccept(center -> {
++            final UserRandomTeleportEvent event = new UserRandomTeleportEvent(target, randomLocationName, center, minRange, maxRange);
++            server.getPluginManager().callEvent(event);
++            if (event.isCancelled()) {
++                return;
++            }
+ 
+-        target.sendTl("tprSuccess");
+-        if (target != user) {
+-            user.sendTl("tprOtherUser", target.getDisplayName());
+-        }
++            target.sendTl("tprSuccess");
++            if (target != user) {
++                user.sendTl("tprOtherUser", target.getDisplayName());
++            }
+ 
+-        (event.isModified() ? randomTeleport.getRandomLocation(event.getCenter(), event.getMinRange(), event.getMaxRange()) : randomTeleport.getRandomLocation(randomLocationName))
+-                .thenAccept(location -> {
+-                    final CompletableFuture<Boolean> future = getNewExceptionFuture(user.getSource(), commandLabel);
+-                    future.thenAccept(success -> {
+-                        if (success) {
+-                            target.sendTl("tprSuccessDone");
+-                        }
++            (event.isModified() ? randomTeleport.getRandomLocation(event.getCenter(), event.getMinRange(), event.getMaxRange()) : randomTeleport.getRandomLocation(randomLocationName))
++                    .thenAccept(location -> {
++                        final CompletableFuture<Boolean> future = getNewExceptionFuture(user.getSource(), commandLabel);
++                        future.thenAccept(success -> {
++                            if (success) {
++                                target.sendTl("tprSuccessDone");
++                            }
++                        });
++                        target.getAsyncTeleport().teleport(location, charge, PlayerTeleportEvent.TeleportCause.COMMAND, future);
+                     });
+-                    target.getAsyncTeleport().teleport(location, charge, PlayerTeleportEvent.TeleportCause.COMMAND, future);
+-                });
++        });
+         throw new NoChargeException();
+     }
+ 
+@@ -88,24 +92,28 @@ public class Commandtpr extends EssentialsCommand {
+             throw new TranslatableException("tprNotExist");
+         }
+ 
+-        final UserRandomTeleportEvent event = new UserRandomTeleportEvent(userToTeleport, potentialLocation, randomTeleport.getCenter(potentialLocation), randomTeleport.getMinRange(potentialLocation), randomTeleport.getMaxRange(potentialLocation));
+-        server.getPluginManager().callEvent(event);
+-        if (event.isCancelled()) {
+-            return;
+-        }
++        final double minRange = randomTeleport.getMinRange(potentialLocation);
++        final double maxRange = randomTeleport.getMaxRange(potentialLocation);
++        randomTeleport.getCenter(potentialLocation).thenAccept(center -> {
++            final UserRandomTeleportEvent event = new UserRandomTeleportEvent(userToTeleport, potentialLocation, center, minRange, maxRange);
++            server.getPluginManager().callEvent(event);
++            if (event.isCancelled()) {
++                return;
++            }
+ 
+-        userToTeleport.sendTl("tprSuccess");
+-        sender.sendTl("tprOtherUser", userToTeleport.getDisplayName());
+-        (event.isModified() ? randomTeleport.getRandomLocation(event.getCenter(), event.getMinRange(), event.getMaxRange()) : randomTeleport.getRandomLocation(potentialLocation))
+-                .thenAccept(location -> {
+-                    final CompletableFuture<Boolean> future = getNewExceptionFuture(sender, commandLabel);
+-                    future.thenAccept(success -> {
+-                        if (success) {
+-                            userToTeleport.sendTl("tprSuccessDone");
+-                        }
++            userToTeleport.sendTl("tprSuccess");
++            sender.sendTl("tprOtherUser", userToTeleport.getDisplayName());
++            (event.isModified() ? randomTeleport.getRandomLocation(event.getCenter(), event.getMinRange(), event.getMaxRange()) : randomTeleport.getRandomLocation(potentialLocation))
++                    .thenAccept(location -> {
++                        final CompletableFuture<Boolean> future = getNewExceptionFuture(sender, commandLabel);
++                        future.thenAccept(success -> {
++                            if (success) {
++                                userToTeleport.sendTl("tprSuccessDone");
++                            }
++                        });
++                        userToTeleport.getAsyncTeleport().now(location, false, PlayerTeleportEvent.TeleportCause.COMMAND, future);
+                     });
+-                    userToTeleport.getAsyncTeleport().now(location, false, PlayerTeleportEvent.TeleportCause.COMMAND, future);
+-                });
++        });
+     }
+ 
+     @Override

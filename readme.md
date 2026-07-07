@@ -1,11 +1,40 @@
 # Essentials-Folia
 
+## Fork 修改说明
+
+本 fork 基于 [Euphillya/Essentials-Folia](https://github.com/Euphillya/Essentials-Folia)，跟随上游更新并补充跨玩家命令的 Folia/Canvas 兼容修复。
+
+### 修改内容
+
+- **补充跨玩家命令修复**：上游 `0018-Fix-TickGuard-Canvas` 修复了 `/gamemode` 的 sender 重载；本 fork 额外修复了 `/ext`、`/feed`、`/heal` 以及 `/gamemode` 的 user 重载在 Folia/Canvas 上执行时的崩溃（`Cannot set gamemode async` 等）。
+- **智能线程路由**：使用 `Bukkit.isOwnedByCurrentRegion` 进行智能路由 —— 若已在玩家所在区域线程则同步执行，否则走 `EntityScheduler` 调度到正确的线程。
+- **跟随上游**：定期同步 Euphillya/Essentials-Folia 与 EssentialsX/Essentials 上游更新。
+
+### 兼容性
+
+| 服务端 | 兼容性 | 说明 |
+|--------|--------|------|
+| Folia | ✅ 兼容 | 跨区域走 EntityScheduler |
+| Canvas | ✅ 兼容 | 跨区域走 EntityScheduler |
+| Paper/Purpur | ✅ 兼容 | `isOwnedByCurrentRegion` 在 Paper 上始终返回 true，走同步路径 |
+
+### 构建方式
+
+```bash
+./gradlew applyPatches
+./gradlew -p Essentials-Patched build -x test -x checkstyleMain
+```
+
+**Java 版本要求**：Java 25（匹配 PaperAPI 26.2）
+
+---
+
 A fork of [EssentialsX](https://github.com/EssentialsX/Essentials) adapted for [Folia](https://github.com/PaperMC/Folia), using a Git patch system for easy maintenance and upstream updates.
 
 ## Prerequisites
 
 - Git
-- Java Development Kit 21 (JDK)
+- Java Development Kit 25 (JDK)
 
 ## Download
 
@@ -94,3 +123,7 @@ For any questions or issues, feel free to open an [issue](https://github.com/Eup
 ## License
 
 This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for more information.
+
+---
+
+> 本 fork 定期同步上游 [Euphillya/Essentials-Folia](https://github.com/Euphillya/Essentials-Folia) 与 EssentialsX。最近同步：2026-07-04（含上游 0018-TickGuard + 本 fork 0019 EntityScheduler 路由）。

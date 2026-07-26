@@ -16,7 +16,7 @@
 |--------|--------|------|
 | Folia | ✅ 兼容 | 跨区域走 EntityScheduler |
 | Canvas | ✅ 兼容 | 跨区域走 EntityScheduler |
-| Paper/Purpur | ✅ 兼容 | `isOwnedByCurrentRegion` 在 Paper 上始终返回 true，走同步路径 |
+| Paper/Purpur | ✅ 兼容 | 命令在主线程执行，`isOwnedByCurrentRegion` 此时返回 true，因此走同步路径 |
 
 ### 构建方式
 
@@ -126,4 +126,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ---
 
-> 本 fork 定期同步上游 [Euphillya/Essentials-Folia](https://github.com/Euphillya/Essentials-Folia) 与 EssentialsX。最近同步：2026-07-04（含上游 0018-TickGuard + 本 fork 0019 EntityScheduler 路由）。
+> 本 fork 定期同步上游 [Euphillya/Essentials-Folia](https://github.com/Euphillya/Essentials-Folia) 与 EssentialsX。最近同步：2026-07-26（含上游 0018-TickGuard、上游 0019 `/tpr` 修复，以及本 fork 的 0020 EntityScheduler 路由）。

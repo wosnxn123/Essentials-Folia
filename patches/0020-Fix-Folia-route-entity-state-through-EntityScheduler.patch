@@ -4,7 +4,6 @@ Date: Fri, 3 Jul 2026 12:12:53 +0800
 Subject: [PATCH] Fix Folia: route entity state through EntityScheduler with
  isOwnedByCurrentRegion
 
-
 diff --git a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandext.java b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandext.java
 index 0b9601f94b39a20fd41223b1164960ec66c32d31..93a98b98434fe8b663ab74bd52e829bf6d50b2d1 100644
 --- a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandext.java
@@ -67,10 +66,10 @@ index fcf97889cc97d29c53cec4a2e8e6cf3c119c91f4..31044a16d0adba4064465e063a7e82b3
  
      private void feedPlayer(final Player player) throws QuietAbortException {
 diff --git a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandgamemode.java b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandgamemode.java
-index bb9860c80c59bf475720d4c9d2c6b94d1b3651aa..25764cdcf889ce5245c399b126aae67411e57a4a 100644
+index bb9860c80c59bf475720d4c9d2c6b94d1b3651aa..db5a628a4797eb0297d604cac0d65fbcb2f9f3d5 100644
 --- a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandgamemode.java
 +++ b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandgamemode.java
-@@ -59,8 +61,17 @@ public class Commandgamemode extends EssentialsLoopCommand {
+@@ -59,8 +59,17 @@ public class Commandgamemode extends EssentialsLoopCommand {
              return;
          }
  
@@ -91,7 +90,7 @@ index bb9860c80c59bf475720d4c9d2c6b94d1b3651aa..25764cdcf889ce5245c399b126aae674
  
      private void setUserGamemode(final CommandSource sender, final GameMode gameMode, final User user) throws NotEnoughArgumentsException {
 diff --git a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandheal.java b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandheal.java
-index 7f72526660ef2a931a3110a7e278861ec8de573f..7209d4c13644b279888682c4cf2405d429d42c13 100644
+index 7f72526660ef2a931a3110a7e278861ec8de573f..a2a3a03466a68d811db42c214c808510e565995b 100644
 --- a/Essentials/src/main/java/com/earth2me/essentials/commands/Commandheal.java
 +++ b/Essentials/src/main/java/com/earth2me/essentials/commands/Commandheal.java
 @@ -1,4 +1,5 @@
@@ -112,12 +111,17 @@ index 7f72526660ef2a931a3110a7e278861ec8de573f..7209d4c13644b279888682c4cf2405d4
              if (player.getHealth() == 0) {
                  throw new PlayerExemptException("healDead");
              }
-@@ -75,6 +76,14 @@ public class Commandheal extends EssentialsLoopCommand {
+@@ -75,6 +76,19 @@ public class Commandheal extends EssentialsLoopCommand {
              }
          } catch (final QuietAbortException e) {
              //Handle Quietly
 +        } catch (final PlayerExemptException e) {
-+            //Handle Quietly on async thread
++            // The health check needs the region thread, so it moved inside this task and its
++            // PlayerExemptException can no longer propagate out of updatePlayer. Report it to the
++            // sender here instead of swallowing it - otherwise /heal on a dead player is silent,
++            // on Folia and on Paper alike, since the owned-region fast path runs this same task.
++            // getMessage() is the translation key the exception carries ("healDead").
++            sender.sendTl(e.getMessage());
 +        }
 +        };
 +        if (Bukkit.isOwnedByCurrentRegion(player)) {

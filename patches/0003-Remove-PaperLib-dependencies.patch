@@ -71,7 +71,7 @@ index 1629f8e4328e73471575472f130bd8565d29ede5..4a0ec635e61d12064cbafc52c3afcead
                      Class.forName("com.destroystokyo.paper.event.player.PlayerRecipeBookClickEvent");
                      recipeBookEventProvider = new PaperRecipeBookListener(event -> {
 diff --git a/Essentials/src/main/java/com/earth2me/essentials/EssentialsPlayerListener.java b/Essentials/src/main/java/com/earth2me/essentials/EssentialsPlayerListener.java
-index 3b8c2f6e3f4f6f490627b0e9f2edcc61279a2395..447e5aa546472dfec2944325269674781bd57fed 100644
+index 11a553cf8febefd4db31cdfafb981d540f89a7c6..818062161964fd51101d99cb277d1d327143509b 100644
 --- a/Essentials/src/main/java/com/earth2me/essentials/EssentialsPlayerListener.java
 +++ b/Essentials/src/main/java/com/earth2me/essentials/EssentialsPlayerListener.java
 @@ -15,7 +15,7 @@ import com.earth2me.essentials.utils.FormatUtil;
